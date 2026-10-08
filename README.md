@@ -1,9 +1,9 @@
 # INF1633
 
 # Auteur :
-Antoine Mailhot
-Lamoureux William
-Racine-Leblanc Micaël
+## - Antoine Mailhot
+## - Lamoureux William
+## - Racine-Leblanc Micaël
 
 # Projet : Afficher la teneur en Co2 dans l’air à l’aide du capteur SEN0159 / MG-811 et la carte FRDM-KL27Z
 
