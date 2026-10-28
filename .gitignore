@@ -23,3 +23,6 @@ Release/
 # Fichiers propres au système d'exploitation
 Thumbs.db
 .DS_Store
+
+# Parametres locaux generes par MCUXpresso / Eclipse
+INF1633/.settings/language.settings.xml
