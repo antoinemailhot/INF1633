@@ -1,0 +1,25 @@
+# Fichiers de compilation
+*.o
+*.obj
+*.a
+*.lib
+*.elf
+*.bin
+*.hex
+*.map
+*.axf
+
+# Répertoires de compilation générés
+build/
+Debug/
+Release/
+
+# Fichiers temporaires
+*.tmp
+*.log
+*.swp
+*~
+
+# Fichiers propres au système d'exploitation
+Thumbs.db
+.DS_Store
