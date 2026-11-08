@@ -14,6 +14,7 @@
 #include "peripherals.h"
 #include "pin_mux.h"
 #include "clock_config.h"
+#include "fsl_debug_console.h"
 
 /* Prototypes des fonctions de l'application. */
 void Init_Hardware(void);
@@ -26,6 +27,15 @@ int main(void)
 {
     /* Initialiser le matériel avant de commencer le traitement. */
     Init_Hardware();
+
+    /* Afficher un message de confirmation sur la console UART. */
+    PRINTF("\r\n");
+    PRINTF("========================================\r\n");
+    PRINTF(" Station de surveillance environnementale\r\n");
+    PRINTF(" Carte : FRDM-KL27Z\r\n");
+    PRINTF(" Console UART : 115200 bauds\r\n");
+    PRINTF(" Systeme pret.\r\n");
+    PRINTF("========================================\r\n");
 
     /* Boucle principale du programme. */
     while (1)
