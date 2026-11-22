@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * @brief Initialise le convertisseur ADC utilisé par le MG-811.
  *
@@ -19,8 +23,23 @@ bool MG811_Init(void);
  * @return true si la conversion est terminée avec succès.
  *
  * En cas d'échec, *rawValue vaut zéro si le pointeur est valide.
- * Aucun calcul de concentration en ppm n'est effectué.
+ * Aucun calcul de tension ou de concentration en ppm n'est effectué.
  */
 bool Read_Sensor_Raw(uint16_t *rawValue);
+
+/*
+ * @brief Lit le signal analogique du MG-811 et le convertit en volts.
+ *
+ * @return Tension calculée en volts.
+ * @return NAN si l'acquisition ou la conversion échoue.
+ *
+ * La référence ADC nominale est définie dans sensor_mg811.c.
+ * Sa valeur réelle doit être confirmée par une mesure électrique.
+ */
+float Get_Sensor_Voltage(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SENSOR_MG811_H */

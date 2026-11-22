@@ -1,4 +1,3 @@
-
 /*
  * Projet : INF1633
  * Auteurs : Antoine Mailhot, William Lamoureux, Micael Racine-Leblanc
@@ -6,11 +5,12 @@
  * Microcontroleur : MKL27Z64VLH4
  *
  * Description :
- * Diagnostic independant de la DEL rouge et de la transmission UART.
+ * Diagnostic des trois DEL et acquisition de la tension du MG-811.
  */
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 
 #include "board.h"
 #include "peripherals.h"
@@ -25,30 +25,26 @@
 static bool s_mg811Initialized = false;
 
 /* Prototypes des fonctions de l'application. */
-void Init_Hardware(void);
-void Process_CO2(void);
+static void Init_Hardware(void);
+static void Process_CO2(void);
 
 /*
- * @brief Test des trois DEL de la carte FRDM-KL27Z.
+ * @brief Point d'entree du programme.
+ *
+ * Initialise le materiel, puis effectue periodiquement :
+ * - une acquisition de la tension du MG-811 ;
+ * - un clignotement des trois DEL.
  */
 int main(void)
 {
-    /* Initialiser les horloges du microcontroleur. */
-    BOARD_InitBootClocks();
-
-    /* Initialiser les broches de la carte. */
-    BOARD_InitBootPins();
-
-    /* Configurer les broches des trois DEL. */
-    BOARD_InitLEDsPins();
-
-    /* Eteindre initialement les trois DEL. */
-    LED_RED_OFF();
-    LED_GREEN_OFF();
-    LED_BLUE_OFF();
+    /* Initialiser l'ensemble du materiel. */
+    Init_Hardware();
 
     while (1)
     {
+        /* Acquerir et afficher la tension du MG-811. */
+        Process_CO2();
+
         /* Allumer simultanement les trois DEL. */
         LED_RED_ON();
         LED_GREEN_ON();
@@ -70,7 +66,7 @@ int main(void)
 /*
  * @brief Initialise les peripheriques et le materiel de la carte.
  */
-void Init_Hardware(void)
+static void Init_Hardware(void)
 {
     /* Initialiser les horloges du microcontroleur. */
     BOARD_InitBootClocks();
@@ -81,8 +77,10 @@ void Init_Hardware(void)
     /* Initialiser explicitement les broches des trois DEL. */
     BOARD_InitLEDsPins();
 
-    /* Eteindre la DEL rouge au demarrage. */
+    /* Eteindre les trois DEL au demarrage. */
     LED_RED_OFF();
+    LED_GREEN_OFF();
+    LED_BLUE_OFF();
 
     /* Initialiser les autres peripheriques configures. */
     BOARD_InitBootPeripherals();
@@ -94,17 +92,30 @@ void Init_Hardware(void)
 
     /* Initialiser le convertisseur ADC du MG-811. */
     s_mg811Initialized = MG811_Init();
+
+    if (s_mg811Initialized)
+    {
+        PRINTF("MG-811 : initialisation reussie.\r\n");
+    }
+    else
+    {
+        PRINTF("ERREUR : initialisation du MG-811 impossible.\r\n");
+    }
 }
 
 /*
- * @brief Effectue une acquisition brute du capteur MG-811.
+ * @brief Acquiert et affiche la tension du capteur MG-811.
  *
- * La valeur retournee correspond a la conversion ADC sur 12 bits.
+ * Get_Sensor_Voltage() effectue elle-meme la lecture ADC
+ * et retourne la tension en volts.
+ *
+ * NAN indique une erreur de lecture ou de conversion.
  * Aucune conversion en ppm n'est effectuee ici.
  */
-void Process_CO2(void)
+static void Process_CO2(void)
 {
-    uint16_t rawValue = 0U;
+    float voltage;
+    uint32_t voltageMillivolts;
 
     /* Verifier que le capteur a ete initialise correctement. */
     if (!s_mg811Initialized)
@@ -113,14 +124,20 @@ void Process_CO2(void)
         return;
     }
 
-    /* Declencher une conversion ADC et recuperer sa valeur brute. */
-    if (Read_Sensor_Raw(&rawValue))
+    /* Lire la tension calculee a partir de la valeur ADC brute. */
+    voltage = Get_Sensor_Voltage();
+
+    /* Verifier si la mesure est valide et non negative. */
+    if (!isfinite(voltage) || (voltage < 0.0f))
     {
-        PRINTF("MG-811 - Valeur ADC brute : %u / 4095\r\n",
-               (unsigned int)rawValue);
+        PRINTF("ERREUR : acquisition ou conversion ADC impossible.\r\n");
+        return;
     }
-    else
-    {
-        PRINTF("ERREUR : echec de la conversion ADC du MG-811.\r\n");
-    }
+
+    /* Convertir les volts en millivolts avec arrondi. */
+    voltageMillivolts = (uint32_t)((voltage * 1000.0f) + 0.5f);
+
+    /* Afficher la tension sans formatage flottant. */
+    PRINTF("MG-811 - Tension : %lu mV\r\n",
+           (unsigned long)voltageMillivolts);
 }
