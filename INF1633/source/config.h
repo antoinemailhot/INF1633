@@ -63,9 +63,19 @@ extern "C" {
  * 2. Seuils applicatifs et plage physique valide
  * ============================================================================ */
 
+/* Macro exigee par l'issue #11 : seuil d'alerte fixe a 1000 ppm. */
+#ifndef CO2_THRESHOLD_PPM
+#define CO2_THRESHOLD_PPM               (1000.0f)
+#endif
+
 /* Seuil d'alerte de concentration en CO2 (en ppm) pour la DEL rouge. */
 #ifndef CO2_ALERT_THRESHOLD_PPM
-#define CO2_ALERT_THRESHOLD_PPM         (1000.0f)
+#define CO2_ALERT_THRESHOLD_PPM         CO2_THRESHOLD_PPM
+#endif
+
+/* Bande morte (hysteresis en ppm) pour eviter le bagottement d'alerte (0 = desactive). */
+#ifndef CO2_ALERT_HYSTERESIS_PPM
+#define CO2_ALERT_HYSTERESIS_PPM        (0.0f)
 #endif
 
 /* Concentration de reference de l'air ambiant sain (en ppm). */
