@@ -5,7 +5,11 @@
  * Microcontroleur : MKL27Z64VLH4
  *
  * Description :
- * Diagnostic des trois DEL et acquisition de la tension du MG-811.
+ * Orchestration applicative non-bloquante (cycle de 5 secondes) :
+ * - Acquisition de la tension du capteur CO2 ;
+ * - Conversion en concentration (ppm) et evaluation du seuil d'alerte ;
+ * - Formatage et transmission sur la console serie UART toutes les 5 s ;
+ * - Signalisation visuelle par DEL Verte (cycle normal) et DEL Rouge (alerte).
  */
 
 #include <stdint.h>
@@ -19,125 +23,141 @@
 #include "fsl_common.h"
 #include "fsl_debug_console.h"
 
+#include "config.h"
+#include "system_time.h"
+#include "led_driver.h"
 #include "sensor_mg811.h"
+#include "atom_conversion.h"
+#include "co2_decision.h"
+#include "co2_formatter.h"
 
-/* Etat de l'initialisation du capteur MG-811. */
+/* Etat d'initialisation des sous-systemes. */
 static bool s_mg811Initialized = false;
+static bool s_timeInitialized  = false;
+
+/* Timers non-bloquants pour le cycle de 5 s et l'impulsion de la DEL Verte. */
+static periodic_timer_t s_acquisitionTimer;
+static pulse_timer_t    s_greenLedPulse;
 
 /* Prototypes des fonctions de l'application. */
 static void Init_Hardware(void);
-static void Process_CO2(void);
+static void Process_CO2_Cycle(void);
 
 /*
  * @brief Point d'entree du programme.
- *
- * Initialise le materiel, puis effectue periodiquement :
- * - une acquisition de la tension du MG-811 ;
- * - un clignotement des trois DEL.
  */
 int main(void)
 {
-    /* Initialiser l'ensemble du materiel. */
     Init_Hardware();
+
+    /* Planifier le cycle nominal d'acquisition et d'affichage toutes les 5 s. */
+    PeriodicTimer_Init(&s_acquisitionTimer, SYSTEM_ACQUISITION_PERIOD_MS, true);
 
     while (1)
     {
-        /* Acquerir et afficher la tension du MG-811. */
-        Process_CO2();
+        /* Executer l'acquisition et l'affichage uniquement chaque 5 secondes. */
+        if (PeriodicTimer_IsDue(&s_acquisitionTimer))
+        {
+            Process_CO2_Cycle();
+        }
 
-        /* Allumer simultanement les trois DEL. */
-        LED_RED_ON();
-        LED_GREEN_ON();
-        LED_BLUE_ON();
-
-        /* Maintenir les DEL allumees pendant 500 ms. */
-        SDK_DelayAtLeastUs(500000U, SystemCoreClock);
-
-        /* Eteindre simultanement les trois DEL. */
-        LED_RED_OFF();
-        LED_GREEN_OFF();
-        LED_BLUE_OFF();
-
-        /* Maintenir les DEL eteintes pendant 500 ms. */
-        SDK_DelayAtLeastUs(500000U, SystemCoreClock);
+        /* Orchestrer de maniere non-bloquante l'extinction de la DEL Verte. */
+        if (!PulseTimer_IsActive(&s_greenLedPulse))
+        {
+            Turn_Off_Green_LED();
+        }
     }
 }
 
 /*
- * @brief Initialise les peripheriques et le materiel de la carte.
+ * @brief Initialise les peripheriques, horloges, GPIO, base de temps et capteurs.
  */
 static void Init_Hardware(void)
 {
-    /* Initialiser les horloges du microcontroleur. */
     BOARD_InitBootClocks();
-
-    /* Initialiser les broches configurees pour la carte. */
     BOARD_InitBootPins();
 
-    /* Initialiser explicitement les broches des trois DEL. */
-    BOARD_InitLEDsPins();
+    /* Initialiser le pilote GPIO des DEL Verte et Rouge (toutes deux eteintes). */
+    LED_Driver_Init();
 
-    /* Eteindre les trois DEL au demarrage. */
-    LED_RED_OFF();
-    LED_GREEN_OFF();
-    LED_BLUE_OFF();
-
-    /* Initialiser les autres peripheriques configures. */
     BOARD_InitBootPeripherals();
 
 #ifndef BOARD_INIT_DEBUG_CONSOLE_PERIPHERAL
-    /* Initialiser la console de debogage. */
     BOARD_InitDebugConsole();
 #endif
 
-    /* Initialiser le convertisseur ADC du MG-811. */
-    s_mg811Initialized = MG811_Init();
-
-    if (s_mg811Initialized)
+    /* Initialiser la base de temps systeme (1 ms via SysTick). */
+    s_timeInitialized = SystemTime_Init();
+    if (!s_timeInitialized)
     {
-        PRINTF("MG-811 : initialisation reussie.\r\n");
+        PRINTF("ERREUR : initialisation de la base de temps impossible.\r\n");
     }
-    else
+
+    /* Initialiser le capteur analogique de CO2. */
+    s_mg811Initialized = MG811_Init();
+    if (!s_mg811Initialized)
     {
-        PRINTF("ERREUR : initialisation du MG-811 impossible.\r\n");
+        PRINTF("ERREUR : initialisation du capteur CO2 impossible.\r\n");
+        Turn_On_Red_LED();
     }
 }
 
 /*
- * @brief Acquiert et affiche la tension du capteur MG-811.
- *
- * Get_Sensor_Voltage() effectue elle-meme la lecture ADC
- * et retourne la tension en volts.
- *
- * NAN indique une erreur de lecture ou de conversion.
- * Aucune conversion en ppm n'est effectuee ici.
+ * @brief Execute un cycle complet d'acquisition, conversion, decision et
+ *        transmission serie toutes les 5 secondes.
  */
-static void Process_CO2(void)
+static void Process_CO2_Cycle(void)
 {
     float voltage;
-    uint32_t voltageMillivolts;
+    float co2Ppm;
+    co2_status_t status;
+    char serialLine[CO2_FORMAT_BUFFER_MIN_SIZE];
 
-    /* Verifier que le capteur a ete initialise correctement. */
     if (!s_mg811Initialized)
     {
-        PRINTF("ERREUR : le capteur MG-811 n'est pas initialise.\r\n");
+        PRINTF("ERREUR : capteur CO2 non initialise.\r\n");
+        Turn_On_Red_LED();
         return;
     }
 
-    /* Lire la tension calculee a partir de la valeur ADC brute. */
+    /* 1. Acquisition de la tension en volts. */
     voltage = Get_Sensor_Voltage();
-
-    /* Verifier si la mesure est valide et non negative. */
     if (!isfinite(voltage) || (voltage < 0.0f))
     {
-        PRINTF("ERREUR : acquisition ou conversion ADC impossible.\r\n");
+        PRINTF("ERREUR : lecture ADC invalide.\r\n");
+        Turn_On_Red_LED();
         return;
     }
 
-    /* Convertir les volts en millivolts avec arrondi. */
-    voltageMillivolts = (uint32_t)((voltage * 1000.0f) + 0.5f);
+    /* 2. Conversion tension -> concentration en ppm. */
+    co2Ppm = Calculate_CO2_PPM(voltage);
 
-    /* Afficher la tension sans formatage flottant. */
-    PRINTF("MG-811 - Tension : %lu mV\r\n",
-           (unsigned long)voltageMillivolts);
+    /* 3. Evaluation de l'etat d'alerte avec hysteresis (1000 ppm / 950 ppm). */
+    status = Evaluate_CO2_Level(co2Ppm);
+
+    if (status == CO2_STATUS_ERROR)
+    {
+        PRINTF("ERREUR : concentration CO2 hors plage valide.\r\n");
+        Turn_On_Red_LED();
+        return;
+    }
+
+    /* 4. Formater et transmettre la chaine exacte sur le terminal serie. */
+    if (Format_CO2_Serial_Line(co2Ppm, serialLine, sizeof(serialLine)))
+    {
+        PRINTF("%s", serialLine);
+    }
+
+    /* 5. Piloter la DEL Rouge (alerte) et pulser la DEL Verte (cycle normal). */
+    if (status == CO2_STATUS_ALERT)
+    {
+        Turn_On_Red_LED();
+    }
+    else
+    {
+        Turn_Off_Red_LED();
+    }
+
+    Turn_On_Green_LED();
+    PulseTimer_Trigger(&s_greenLedPulse, LED_PULSE_DURATION_MS);
 }
