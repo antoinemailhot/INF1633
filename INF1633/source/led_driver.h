@@ -18,7 +18,8 @@ extern "C" {
 
 /*
  * Mapping materiel des DEL de signalisation (FRDM-KL27Z).
- * Logique active a l'etat bas : 0 = allumee, 1 = eteinte.
+ * Logique electrique active a l'etat bas (invers?e) :
+ * 0U = DEL allumee, 1U = DEL eteinte.
  */
 #define LED_RED_PORT            PORTB
 #define LED_RED_GPIO            GPIOB
@@ -41,16 +42,21 @@ extern "C" {
 bool LED_Driver_Init(void);
 
 /*
- * @brief Commande l'etat de la LED Verte (PTB19).
- *
- * @param on true pour allumer la DEL, false pour l'eteindre.
+ * @brief Allume la LED Rouge (PTB18) en appliquant la logique active-low (0U).
  */
-void LED_Green_Set(bool on);
+void Turn_On_Red_LED(void);
 
 /*
- * @brief Inverse l'etat logique actuel de la LED Verte (PTB19).
+ * @brief Eteint la LED Rouge (PTB18) en appliquant la logique active-low (1U).
  */
-void LED_Green_Toggle(void);
+void Turn_Off_Red_LED(void);
+
+/*
+ * @brief Indique si la LED Rouge est actuellement allumee.
+ *
+ * @return true si la LED Rouge est allumee, false sinon.
+ */
+bool Is_Red_LED_On(void);
 
 /*
  * @brief Commande l'etat de la LED Rouge (PTB18).
@@ -63,6 +69,18 @@ void LED_Red_Set(bool on);
  * @brief Inverse l'etat logique actuel de la LED Rouge (PTB18).
  */
 void LED_Red_Toggle(void);
+
+/*
+ * @brief Commande l'etat de la LED Verte (PTB19).
+ *
+ * @param on true pour allumer la DEL, false pour l'eteindre.
+ */
+void LED_Green_Set(bool on);
+
+/*
+ * @brief Inverse l'etat logique actuel de la LED Verte (PTB19).
+ */
+void LED_Green_Toggle(void);
 
 /*
  * @brief Eteint simultanement les deux DEL de signalisation.
