@@ -5,11 +5,11 @@
  * Microcontroleur : MKL27Z64VLH4
  *
  * Description :
- * Orchestration applicative non-bloquante (cycle de 5 secondes) :
- * - Acquisition de la tension du capteur CO2 ;
- * - Conversion en concentration (ppm) et evaluation du seuil d'alerte ;
- * - Formatage et transmission sur la console serie UART toutes les 5 s ;
- * - Signalisation visuelle par DEL Verte (cycle normal) et DEL Rouge (alerte).
+ * Integration finale de la boucle applicative non-bloquante (cycle de 5 s) :
+ * - Phase de prechauffage non-bloquante avec signalisation DEL et UART ;
+ * - Sequence nominale stricte :
+ *   Clignotement vert -> Lecture -> Calcul -> Affichage -> Verification Seuil -> Attente ;
+ * - Allocation 100 % statique (aucune fuite memoire) et supervision sans blocage.
  */
 
 #include <stdint.h>
@@ -31,37 +31,52 @@
 #include "co2_decision.h"
 #include "co2_formatter.h"
 
-/* Etat d'initialisation des sous-systemes. */
-static bool s_mg811Initialized = false;
-static bool s_timeInitialized  = false;
+/* Etat d'initialisation et de prechauffage du systeme (memoire statique). */
+static bool s_sensorInitialized = false;
+static bool s_timeInitialized   = false;
+static bool s_warmupCompleted   = false;
 
-/* Timers non-bloquants pour le cycle de 5 s et l'impulsion de la DEL Verte. */
+/* Timers non-bloquants statiques (zero allocation dynamique). */
 static periodic_timer_t s_acquisitionTimer;
+static periodic_timer_t s_warmupBlinkTimer;
+static periodic_timer_t s_warmupLogTimer;
 static pulse_timer_t    s_greenLedPulse;
 
-/* Prototypes des fonctions de l'application. */
+/* Prototypes des fonctions applicatives. */
 static void Init_Hardware(void);
+static void Process_Warmup_Phase(void);
 static void Process_CO2_Cycle(void);
 
 /*
- * @brief Point d'entree du programme.
+ * @brief Point d'entree principal du firmware.
  */
 int main(void)
 {
     Init_Hardware();
 
-    /* Planifier le cycle nominal d'acquisition et d'affichage toutes les 5 s. */
+    /* Initialiser les timers non-bloquants de prechauffage et de cycle (5 s). */
+    PeriodicTimer_Init(&s_warmupBlinkTimer, LED_WARMUP_BLINK_PERIOD_MS, true);
+    PeriodicTimer_Init(&s_warmupLogTimer, SYSTEM_ACQUISITION_PERIOD_MS, true);
     PeriodicTimer_Init(&s_acquisitionTimer, SYSTEM_ACQUISITION_PERIOD_MS, true);
 
     while (1)
     {
-        /* Executer l'acquisition et l'affichage uniquement chaque 5 secondes. */
+        /* 1. Phase de preparation initiale (prechauffage sonde) non-bloquante */
+        if (!s_warmupCompleted)
+        {
+            Process_Warmup_Phase();
+            continue;
+        }
+
+        /* 2. Cycle nominal toutes les 5 secondes :
+         *    Clignotement vert -> Lecture -> Calcul -> Affichage -> Verification Seuil -> Attente
+         */
         if (PeriodicTimer_IsDue(&s_acquisitionTimer))
         {
             Process_CO2_Cycle();
         }
 
-        /* Orchestrer de maniere non-bloquante l'extinction de la DEL Verte. */
+        /* 3. Attente non-bloquante : extinction automatique de l'impulsion DEL Verte */
         if (!PulseTimer_IsActive(&s_greenLedPulse))
         {
             Turn_Off_Green_LED();
@@ -70,14 +85,14 @@ int main(void)
 }
 
 /*
- * @brief Initialise les peripheriques, horloges, GPIO, base de temps et capteurs.
+ * @brief Initialise les horloges, broches, DEL, console UART, base de temps et capteur.
  */
 static void Init_Hardware(void)
 {
     BOARD_InitBootClocks();
     BOARD_InitBootPins();
 
-    /* Initialiser le pilote GPIO des DEL Verte et Rouge (toutes deux eteintes). */
+    /* Initialiser le pilote GPIO des DEL Verte et Rouge (eteintes au depart). */
     LED_Driver_Init();
 
     BOARD_InitBootPeripherals();
@@ -86,25 +101,67 @@ static void Init_Hardware(void)
     BOARD_InitDebugConsole();
 #endif
 
-    /* Initialiser la base de temps systeme (1 ms via SysTick). */
+    PRINTF("\r\n=== INF1633 - Station de surveillance environnementale CO2 ===\r\n");
+
+    /* Initialiser la base de temps systeme 1 ms (SysTick). */
     s_timeInitialized = SystemTime_Init();
     if (!s_timeInitialized)
     {
         PRINTF("ERREUR : initialisation de la base de temps impossible.\r\n");
     }
 
-    /* Initialiser le capteur analogique de CO2. */
-    s_mg811Initialized = MG811_Init();
-    if (!s_mg811Initialized)
+    /* Initialiser le convertisseur ADC du capteur de CO2. */
+    s_sensorInitialized = MG811_Init();
+    if (!s_sensorInitialized)
     {
         PRINTF("ERREUR : initialisation du capteur CO2 impossible.\r\n");
         Turn_On_Red_LED();
     }
+
+    /* Si le temps de prechauffage est nul, passer directement en regime nominal. */
+    if (CO2_DEFAULT_WARMUP_SEC == 0U)
+    {
+        s_warmupCompleted = true;
+    }
 }
 
 /*
- * @brief Execute un cycle complet d'acquisition, conversion, decision et
- *        transmission serie toutes les 5 secondes.
+ * @brief Gere la periode de prechauffage de maniere non-bloquante avec
+ *        clignotement rapide de la DEL Verte (250 ms) et messages UART.
+ */
+static void Process_Warmup_Phase(void)
+{
+    uint32_t elapsedSec = SystemTime_GetSeconds();
+    uint32_t remainingSec;
+
+    if (elapsedSec >= CO2_DEFAULT_WARMUP_SEC)
+    {
+        s_warmupCompleted = true;
+        Turn_Off_Green_LED();
+        PeriodicTimer_Init(&s_acquisitionTimer, SYSTEM_ACQUISITION_PERIOD_MS, true);
+        PRINTF("Capteur pret : demarrage des mesures toutes les 5 secondes.\r\n");
+        return;
+    }
+
+    if (PeriodicTimer_IsDue(&s_warmupBlinkTimer))
+    {
+        Toggle_Green_LED();
+    }
+
+    if (PeriodicTimer_IsDue(&s_warmupLogTimer))
+    {
+        remainingSec = CO2_DEFAULT_WARMUP_SEC - elapsedSec;
+        PRINTF(MSG_WARMUP_UART_FMT, (unsigned int)remainingSec);
+    }
+}
+
+/*
+ * @brief Execute la sequence applicative complete a chaque cycle de 5 secondes :
+ *        1. Clignotement vert
+ *        2. Lecture
+ *        3. Calcul
+ *        4. Affichage
+ *        5. Verification Seuil
  */
 static void Process_CO2_Cycle(void)
 {
@@ -113,14 +170,18 @@ static void Process_CO2_Cycle(void)
     co2_status_t status;
     char serialLine[CO2_FORMAT_BUFFER_MIN_SIZE];
 
-    if (!s_mg811Initialized)
+    /* Etape 1 : Clignotement vert (impulsion non-bloquante de debut de cycle) */
+    Turn_On_Green_LED();
+    PulseTimer_Trigger(&s_greenLedPulse, LED_PULSE_DURATION_MS);
+
+    if (!s_sensorInitialized)
     {
         PRINTF("ERREUR : capteur CO2 non initialise.\r\n");
         Turn_On_Red_LED();
         return;
     }
 
-    /* 1. Acquisition de la tension en volts. */
+    /* Etape 2 : Lecture analogique (tension en volts) */
     voltage = Get_Sensor_Voltage();
     if (!isfinite(voltage) || (voltage < 0.0f))
     {
@@ -129,35 +190,33 @@ static void Process_CO2_Cycle(void)
         return;
     }
 
-    /* 2. Conversion tension -> concentration en ppm. */
+    /* Etape 3 : Calcul de la concentration en ppm */
     co2Ppm = Calculate_CO2_PPM(voltage);
-
-    /* 3. Evaluation de l'etat d'alerte avec hysteresis (1000 ppm / 950 ppm). */
-    status = Evaluate_CO2_Level(co2Ppm);
-
-    if (status == CO2_STATUS_ERROR)
+    if (!isfinite(co2Ppm))
     {
-        PRINTF("ERREUR : concentration CO2 hors plage valide.\r\n");
+        PRINTF("ERREUR : calcul de concentration CO2 impossible.\r\n");
         Turn_On_Red_LED();
         return;
     }
 
-    /* 4. Formater et transmettre la chaine exacte sur le terminal serie. */
+    /* Etape 4 : Affichage sur le terminal serie au format normalise */
     if (Format_CO2_Serial_Line(co2Ppm, serialLine, sizeof(serialLine)))
     {
         PRINTF("%s", serialLine);
     }
 
-    /* 5. Piloter la DEL Rouge (alerte) et pulser la DEL Verte (cycle normal). */
+    /* Etape 5 : Verification du seuil d'alerte (1000 ppm avec hysteresis 950 ppm) */
+    status = Evaluate_CO2_Level(co2Ppm);
     if (status == CO2_STATUS_ALERT)
     {
         Turn_On_Red_LED();
     }
-    else
+    else if (status == CO2_STATUS_NORMAL)
     {
         Turn_Off_Red_LED();
     }
-
-    Turn_On_Green_LED();
-    PulseTimer_Trigger(&s_greenLedPulse, LED_PULSE_DURATION_MS);
+    else
+    {
+        Turn_On_Red_LED();
+    }
 }
