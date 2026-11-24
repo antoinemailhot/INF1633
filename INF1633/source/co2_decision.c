@@ -2,8 +2,8 @@
  * Projet : INF1633
  * Module : co2_decision
  * Description : Logique de decision et d'evaluation du niveau de CO2
- *               par rapport au seuil d'alerte (1000 ppm), avec support
- *               d'hysteresis et ajustement a chaud en RAM.
+ *               avec hysteresis (activation >= 1000 ppm, desactivation < 950 ppm)
+ *               et ajustement a chaud en RAM.
  */
 
 #include <math.h>
@@ -16,7 +16,7 @@ static float        s_alertHysteresisPpm = CO2_ALERT_HYSTERESIS_PPM;
 static co2_status_t s_currentStatus      = CO2_STATUS_NORMAL;
 
 /*
- * @brief Evalue le niveau de CO2 et retourne son statut complet.
+ * @brief Evalue le niveau de CO2 avec hysteresis et retourne son statut complet.
  */
 co2_status_t Evaluate_CO2_Level(float ppm)
 {
@@ -32,10 +32,10 @@ co2_status_t Evaluate_CO2_Level(float ppm)
     }
 
     /*
-     * Si une alerte est deja active, appliquer la bande morte (hysteresis)
-     * avant de repasser en etat NORMAL.
+     * Si l'alerte est deja active, elle reste active tant que la valeur
+     * n'est pas descendue strictement sous le seuil de relachement (950 ppm).
      */
-    if ((s_currentStatus == CO2_STATUS_ALERT) && (s_alertHysteresisPpm > 0.0f))
+    if (s_currentStatus == CO2_STATUS_ALERT)
     {
         releaseThreshold = s_alertThresholdPpm - s_alertHysteresisPpm;
         if (ppm >= releaseThreshold)
@@ -57,7 +57,7 @@ co2_status_t Evaluate_CO2_Level(float ppm)
 }
 
 /*
- * @brief Verifie si la concentration de CO2 declenche une alerte.
+ * @brief Verifie si la concentration de CO2 declenche ou maintient une alerte.
  */
 bool Is_CO2_Alert(float ppm)
 {
@@ -70,6 +70,14 @@ bool Is_CO2_Alert(float ppm)
 co2_status_t Get_Current_CO2_Status(void)
 {
     return s_currentStatus;
+}
+
+/*
+ * @brief Reinitialise l'etat interne de decision a CO2_STATUS_NORMAL.
+ */
+void Reset_CO2_Decision_State(void)
+{
+    s_currentStatus = CO2_STATUS_NORMAL;
 }
 
 /*
@@ -97,9 +105,17 @@ bool Set_CO2_Alert_Config(float thresholdPpm, float hysteresisPpm)
 }
 
 /*
- * @brief Retourne le seuil d'alerte actuellement actif en RAM (en ppm).
+ * @brief Retourne le seuil d'activation d'alerte actif en RAM (en ppm).
  */
 float Get_CO2_Alert_Threshold(void)
 {
     return s_alertThresholdPpm;
+}
+
+/*
+ * @brief Retourne le seuil de desactivation d'alerte actif en RAM (en ppm).
+ */
+float Get_CO2_Release_Threshold(void)
+{
+    return (s_alertThresholdPpm - s_alertHysteresisPpm);
 }

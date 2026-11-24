@@ -73,10 +73,13 @@ extern "C" {
 #define CO2_ALERT_THRESHOLD_PPM         CO2_THRESHOLD_PPM
 #endif
 
-/* Bande morte (hysteresis en ppm) pour eviter le bagottement d'alerte (0 = desactive). */
+/* Bande morte (hysteresis en ppm) : alerte activee >= 1000 ppm, desactivee < 950 ppm. */
 #ifndef CO2_ALERT_HYSTERESIS_PPM
-#define CO2_ALERT_HYSTERESIS_PPM        (0.0f)
+#define CO2_ALERT_HYSTERESIS_PPM        (50.0f)
 #endif
+
+/* Seuil de desactivation de l'alerte avec hysteresis (950 ppm par defaut). */
+#define CO2_RELEASE_THRESHOLD_PPM       (CO2_THRESHOLD_PPM - CO2_ALERT_HYSTERESIS_PPM)
 
 /* Concentration de reference de l'air ambiant sain (en ppm). */
 #ifndef CO2_AMBIENT_REFERENCE_PPM
