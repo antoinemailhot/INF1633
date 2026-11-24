@@ -1,29 +1,44 @@
 /*
  * Projet : INF1633
  * Module : sensor_mg811
- * Description : Acquisition brute du signal analogique du MG-811.
+ * Description : Acquisition ADC et conversion en tension du MG-811.
  */
 
+#include <math.h>
 #include <stddef.h>
 
 #include "sensor_mg811.h"
+#include "atom_conversion.h"
 
 #include "fsl_adc16.h"
 #include "fsl_clock.h"
 #include "fsl_port.h"
 
 /*
+ * Référence nominale du convertisseur ADC en volts.
+ *
+ * Cette valeur est configurable à la compilation.
+ * La tension réelle VREFH doit être mesurée pour améliorer la précision.
+ */
+#ifndef MG811_ADC_REFERENCE_VOLTAGE
+#define MG811_ADC_REFERENCE_VOLTAGE 3.3f
+#endif
+
+/* Résolution utilisée par le convertisseur ADC16. */
+#define MG811_ADC_RESOLUTION_BITS    12U
+
+/*
  * Canal ADC0_SE1 :
  * Broche PTE16, connecteur J4[2] / A0.
  */
-#define MG811_ADC_CHANNEL             1U
-#define MG811_ADC_CHANNEL_GROUP       0U
+#define MG811_ADC_CHANNEL            1U
+#define MG811_ADC_CHANNEL_GROUP      0U
 
 /*
  * Limite de sécurité du polling.
  * Il s'agit d'un nombre d'itérations, et non d'une durée en millisecondes.
  */
-#define MG811_ADC_TIMEOUT_ITERATIONS  1000000U
+#define MG811_ADC_TIMEOUT_ITERATIONS 1000000U
 
 /* Indique si le convertisseur ADC a été initialisé. */
 static bool s_adcInitialized = false;
@@ -156,4 +171,37 @@ bool Read_Sensor_Raw(uint16_t *rawValue)
     );
 
     return true;
+}
+
+/*
+ * @brief Lit le signal analogique et retourne sa tension en volts.
+ *
+ * @return Tension calculée en volts, ou NAN en cas d'erreur.
+ *
+ * La conversion utilise :
+ * V = rawValue * VREF / 4096
+ */
+float Get_Sensor_Voltage(void)
+{
+    uint16_t rawValue = 0U;
+    float voltage = 0.0f;
+
+    /* Lire la valeur brute du convertisseur ADC. */
+    if (!Read_Sensor_Raw(&rawValue))
+    {
+        return NAN;
+    }
+
+    /* Convertir la valeur brute en tension électrique. */
+    if (!ADC_To_Voltage(
+        rawValue,
+        MG811_ADC_REFERENCE_VOLTAGE,
+        MG811_ADC_RESOLUTION_BITS,
+        &voltage
+    ))
+    {
+        return NAN;
+    }
+
+    return voltage;
 }
