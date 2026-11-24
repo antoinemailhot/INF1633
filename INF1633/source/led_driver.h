@@ -18,7 +18,7 @@ extern "C" {
 
 /*
  * Mapping materiel des DEL de signalisation (FRDM-KL27Z).
- * Logique electrique active a l'etat bas (invers?e) :
+ * Logique electrique active a l'etat bas (inversee) :
  * 0U = DEL allumee, 1U = DEL eteinte.
  */
 #define LED_RED_PORT            PORTB
@@ -71,6 +71,28 @@ void LED_Red_Set(bool on);
 void LED_Red_Toggle(void);
 
 /*
+ * @brief Allume la LED Verte (PTB19) en appliquant la logique active-low (0U).
+ */
+void Turn_On_Green_LED(void);
+
+/*
+ * @brief Eteint la LED Verte (PTB19) en appliquant la logique active-low (1U).
+ */
+void Turn_Off_Green_LED(void);
+
+/*
+ * @brief Inverse l'etat logique actuel (toggle) de la LED Verte (PTB19).
+ */
+void Toggle_Green_LED(void);
+
+/*
+ * @brief Indique si la LED Verte est actuellement allumee.
+ *
+ * @return true si la LED Verte est allumee, false sinon.
+ */
+bool Is_Green_LED_On(void);
+
+/*
  * @brief Commande l'etat de la LED Verte (PTB19).
  *
  * @param on true pour allumer la DEL, false pour l'eteindre.
@@ -78,7 +100,7 @@ void LED_Red_Toggle(void);
 void LED_Green_Set(bool on);
 
 /*
- * @brief Inverse l'etat logique actuel de la LED Verte (PTB19).
+ * @brief Alias historique de Toggle_Green_LED() pour compatibilite.
  */
 void LED_Green_Toggle(void);
 
