@@ -15,8 +15,9 @@
 /* Indique si le pilote GPIO des DEL a ete initialise. */
 static bool s_ledsInitialized = false;
 
-/* Memorise l'etat logique courant de la LED Rouge. */
-static bool s_redLedOn = false;
+/* Memorise l'etat logique courant de chaque DEL. */
+static bool s_redLedOn   = false;
+static bool s_greenLedOn = false;
 
 /*
  * @brief Initialise les ports et broches GPIO des DEL Verte et Rouge.
@@ -44,6 +45,7 @@ bool LED_Driver_Init(void)
 
     s_ledsInitialized = true;
     s_redLedOn = false;
+    s_greenLedOn = false;
 
     return true;
 }
@@ -106,6 +108,44 @@ void LED_Red_Toggle(void)
 }
 
 /*
+ * @brief Allume la LED Verte (PTB19) selon la logique active-low de la carte.
+ */
+void Turn_On_Green_LED(void)
+{
+    LED_Green_Set(true);
+}
+
+/*
+ * @brief Eteint la LED Verte (PTB19) selon la logique active-low de la carte.
+ */
+void Turn_Off_Green_LED(void)
+{
+    LED_Green_Set(false);
+}
+
+/*
+ * @brief Inverse l'etat logique actuel (toggle) de la LED Verte (PTB19).
+ */
+void Toggle_Green_LED(void)
+{
+    if (!s_ledsInitialized)
+    {
+        return;
+    }
+
+    GPIO_PortToggle(LED_GREEN_GPIO, (1U << LED_GREEN_PIN));
+    s_greenLedOn = !s_greenLedOn;
+}
+
+/*
+ * @brief Retourne l'etat courant de la LED Verte.
+ */
+bool Is_Green_LED_On(void)
+{
+    return s_greenLedOn;
+}
+
+/*
  * @brief Commande l'etat de la LED Verte (PTB19).
  */
 void LED_Green_Set(bool on)
@@ -120,19 +160,16 @@ void LED_Green_Set(bool on)
         LED_GREEN_PIN,
         on ? LED_STATE_ON : LED_STATE_OFF
     );
+
+    s_greenLedOn = on;
 }
 
 /*
- * @brief Inverse l'etat logique actuel de la LED Verte (PTB19).
+ * @brief Alias historique de Toggle_Green_LED().
  */
 void LED_Green_Toggle(void)
 {
-    if (!s_ledsInitialized)
-    {
-        return;
-    }
-
-    GPIO_PortToggle(LED_GREEN_GPIO, (1U << LED_GREEN_PIN));
+    Toggle_Green_LED();
 }
 
 /*
@@ -141,5 +178,5 @@ void LED_Green_Toggle(void)
 void LED_All_Off(void)
 {
     Turn_Off_Red_LED();
-    LED_Green_Set(false);
+    Turn_Off_Green_LED();
 }
