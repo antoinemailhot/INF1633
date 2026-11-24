@@ -2,8 +2,8 @@
  * Projet : INF1633
  * Module : led_driver
  * Description : Configuration des ports/broches GPIO (horloge, Pin Muxing,
- *               direction kGPIO_DigitalOutput) et pilotage des DEL Verte
- *               (PTB19) et Rouge (PTB18) sur la carte FRDM-KL27Z.
+ *               direction kGPIO_DigitalOutput) et fonctions de controle des
+ *               DEL Verte (PTB19) et Rouge (PTB18) sur la carte FRDM-KL27Z.
  */
 
 #include "led_driver.h"
@@ -14,6 +14,9 @@
 
 /* Indique si le pilote GPIO des DEL a ete initialise. */
 static bool s_ledsInitialized = false;
+
+/* Memorise l'etat logique courant de la LED Rouge. */
+static bool s_redLedOn = false;
 
 /*
  * @brief Initialise les ports et broches GPIO des DEL Verte et Rouge.
@@ -40,8 +43,66 @@ bool LED_Driver_Init(void)
     GPIO_PinInit(LED_GREEN_GPIO, LED_GREEN_PIN, &ledPinConfig);
 
     s_ledsInitialized = true;
+    s_redLedOn = false;
 
     return true;
+}
+
+/*
+ * @brief Allume la LED Rouge (PTB18) selon la logique active-low de la carte.
+ */
+void Turn_On_Red_LED(void)
+{
+    LED_Red_Set(true);
+}
+
+/*
+ * @brief Eteint la LED Rouge (PTB18) selon la logique active-low de la carte.
+ */
+void Turn_Off_Red_LED(void)
+{
+    LED_Red_Set(false);
+}
+
+/*
+ * @brief Retourne l'etat courant de la LED Rouge.
+ */
+bool Is_Red_LED_On(void)
+{
+    return s_redLedOn;
+}
+
+/*
+ * @brief Commande l'etat de la LED Rouge (PTB18).
+ */
+void LED_Red_Set(bool on)
+{
+    if (!s_ledsInitialized)
+    {
+        return;
+    }
+
+    GPIO_PinWrite(
+        LED_RED_GPIO,
+        LED_RED_PIN,
+        on ? LED_STATE_ON : LED_STATE_OFF
+    );
+
+    s_redLedOn = on;
+}
+
+/*
+ * @brief Inverse l'etat logique actuel de la LED Rouge (PTB18).
+ */
+void LED_Red_Toggle(void)
+{
+    if (!s_ledsInitialized)
+    {
+        return;
+    }
+
+    GPIO_PortToggle(LED_RED_GPIO, (1U << LED_RED_PIN));
+    s_redLedOn = !s_redLedOn;
 }
 
 /*
@@ -75,40 +136,10 @@ void LED_Green_Toggle(void)
 }
 
 /*
- * @brief Commande l'etat de la LED Rouge (PTB18).
- */
-void LED_Red_Set(bool on)
-{
-    if (!s_ledsInitialized)
-    {
-        return;
-    }
-
-    GPIO_PinWrite(
-        LED_RED_GPIO,
-        LED_RED_PIN,
-        on ? LED_STATE_ON : LED_STATE_OFF
-    );
-}
-
-/*
- * @brief Inverse l'etat logique actuel de la LED Rouge (PTB18).
- */
-void LED_Red_Toggle(void)
-{
-    if (!s_ledsInitialized)
-    {
-        return;
-    }
-
-    GPIO_PortToggle(LED_RED_GPIO, (1U << LED_RED_PIN));
-}
-
-/*
  * @brief Eteint simultanement les deux DEL de signalisation.
  */
 void LED_All_Off(void)
 {
-    LED_Red_Set(false);
+    Turn_Off_Red_LED();
     LED_Green_Set(false);
 }
